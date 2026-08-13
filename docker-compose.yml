@@ -1,0 +1,41 @@
+services:
+  collector:
+    build: .
+    container_name: ids-collector
+    command: ["python", "collector/app.py"]
+    environment:
+      # Bind inside the container to all interfaces so the sensors
+      # container (and your host browser via the port mapping below)
+      # can reach it. config.yaml still says 127.0.0.1 for anyone
+      # running things outside Docker -- this env var just overrides
+      # it for this container.
+      COLLECTOR_BIND_HOST: "0.0.0.0"
+    ports:
+      - "5000:5000"
+    volumes:
+      # Keeps the SQLite alert database on your host, so it survives
+      # `docker compose down` / rebuilds.
+      - ids-data:/app/data
+    networks:
+      - ids-net
+
+  sensors:
+    build: .
+    container_name: ids-sensors
+    command: ["python", "simulate_multi_segment.py"]
+    environment:
+      # Sensors reach the collector by its service name on the
+      # compose network, not by 127.0.0.1.
+      COLLECTOR_HOST: "collector"
+      COLLECTOR_PORT: "5000"
+    depends_on:
+      - collector
+    networks:
+      - ids-net
+
+networks:
+  ids-net:
+    driver: bridge
+
+volumes:
+  ids-data:

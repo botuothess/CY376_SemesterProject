@@ -1,0 +1,44 @@
+# distributed_ids configuration
+
+collector:
+  host: "127.0.0.1"
+  port: 5000
+  # Shared secret agents use to authenticate to the collector
+  api_key: "lab-shared-secret-change-me"
+
+# Each entry represents one monitored network segment.
+# In simulation mode, agents generate synthetic traffic for these segments.
+# In live mode, set "interface" to a real NIC/mirror port and set mode: live.
+segments:
+  - segment_id: "DMZ"
+    interface: "eth0"
+    mode: "simulate"     # "simulate" or "live"
+  - segment_id: "INTERNAL"
+    interface: "eth1"
+    mode: "simulate"
+  - segment_id: "OT_IOT"
+    interface: "eth2"
+    mode: "simulate"
+
+detection:
+  port_scan:
+    distinct_ports_threshold: 15   # distinct dst ports from one src within window
+    window_seconds: 10
+  syn_flood:
+    syn_count_threshold: 50
+    window_seconds: 5
+  arp_spoof:
+    enabled: true
+  suspicious_payload_keywords:
+    - "SELECT * FROM"
+    - "/etc/passwd"
+    - "cmd.exe"
+    - "wget http"
+    - "eval("
+
+correlation:
+  poll_interval_seconds: 5
+  # Same source IP triggering alerts in >= this many distinct segments within
+  # the window is flagged as likely multi-segment reconnaissance / lateral movement.
+  cross_segment_window_seconds: 120
+  cross_segment_min_segments: 2
