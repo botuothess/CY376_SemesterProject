@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>distributed_ids — segment watch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #0B0F14;
+    --panel: #121821;
+    --panel-2: #161D28;
+    --line: #232C3A;
+    --text: #E7ECF3;
+    --muted: #7C8AA0;
+    --accent: #4FD1C5;
+    --low: #4DA8FF;
+    --medium: #F5C453;
+    --high: #FF8A5B;
+    --critical: #FF5D6C;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(1200px 500px at 15% -10%, rgba(79,209,197,0.06), transparent 60%),
+      var(--bg);
+    color:var(--text);
+    font-family:'Inter',sans-serif;
+    min-height:100vh;
+  }
+  .mono{font-family:'IBM Plex Mono',monospace;}
+
+  header{
+    display:flex;justify-content:space-between;align-items:flex-end;
+    padding:28px 32px 18px;
+    border-bottom:1px solid var(--line);
+  }
+  header h1{
+    margin:0;font-size:20px;font-weight:600;letter-spacing:0.02em;
+  }
+  header h1 span{color:var(--accent);}
+  header .sub{color:var(--muted);font-size:12.5px;margin-top:4px;font-family:'IBM Plex Mono',monospace;}
+  header .clock{font-family:'IBM Plex Mono',monospace;color:var(--muted);font-size:12.5px;text-align:right;}
+  .live-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent);margin-right:6px;
+    box-shadow:0 0 0 0 rgba(79,209,197,0.6);animation:pulse 2s infinite;}
+  @keyframes pulse{
+    0%{box-shadow:0 0 0 0 rgba(79,209,197,0.5);}
+    70%{box-shadow:0 0 0 8px rgba(79,209,197,0);}
+    100%{box-shadow:0 0 0 0 rgba(79,209,197,0);}
+  }
+
+  /* Topology strip */
+  .topology{
+    display:flex;align-items:center;gap:0;
+    padding:26px 32px 30px;
+    border-bottom:1px solid var(--line);
+    overflow-x:auto;
+  }
+  .node{
+    display:flex;flex-direction:column;align-items:center;gap:10px;
+    min-width:150px;position:relative;
+  }
+  .node .ring{
+    width:54px;height:54px;border-radius:50%;
+    border:2px solid var(--line);
+    display:flex;align-items:center;justify-content:center;
+    font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);
+    transition:border-color .3s, box-shadow .3s;
+    background:var(--panel);
+  }
+  .node .ring.hot{border-color:var(--high);box-shadow:0 0 18px rgba(255,138,91,0.35);color:var(--high);}
+  .node .label{font-size:12.5px;font-weight:600;}
+  .node .count{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);}
+  .connector{
+    flex:1;height:1px;background:repeating-linear-gradient(90deg, var(--line) 0 6px, transparent 6px 12px);
+    min-width:40px;margin:0 4px 28px;
+  }
+  .hub{
+    display:flex;flex-direction:column;align-items:center;gap:10px;min-width:150px;
+  }
+  .hub .ring{
+    width:60px;height:60px;border:2px solid var(--accent);color:var(--accent);
+    box-shadow:0 0 22px rgba(79,209,197,0.25);
+  }
+
+  main{padding:26px 32px 60px;display:grid;grid-template-columns:1.6fr 1fr;gap:22px;}
+  @media (max-width:980px){ main{grid-template-columns:1fr;} }
+
+  .panel{
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    overflow:hidden;
+  }
+  .panel-head{
+    padding:14px 18px;border-bottom:1px solid var(--line);
+    display:flex;justify-content:space-between;align-items:center;
+  }
+  .panel-head h2{margin:0;font-size:13.5px;font-weight:600;letter-spacing:0.03em;text-transform:uppercase;color:var(--text);}
+  .panel-head .count-pill{
+    font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);
+    background:var(--panel-2);padding:3px 8px;border-radius:20px;border:1px solid var(--line);
+  }
+
+  table{width:100%;border-collapse:collapse;font-size:12.5px;}
+  thead th{
+    text-align:left;padding:10px 18px;color:var(--muted);font-weight:500;
+    font-family:'IBM Plex Mono',monospace;font-size:10.5px;text-transform:uppercase;letter-spacing:0.05em;
+    border-bottom:1px solid var(--line);
+  }
+  tbody td{padding:10px 18px;border-bottom:1px solid var(--line);font-family:'IBM Plex Mono',monospace;color:var(--text);}
+  tbody tr:last-child td{border-bottom:none;}
+  tbody tr:hover{background:var(--panel-2);}
+
+  .sev{
+    display:inline-block;padding:2px 8px;border-radius:20px;font-size:10.5px;
+    font-family:'IBM Plex Mono',monospace;font-weight:600;letter-spacing:0.03em;text-transform:uppercase;
+  }
+  .sev.low{color:var(--low);background:rgba(77,168,255,0.12);}
+  .sev.medium{color:var(--medium);background:rgba(245,196,83,0.12);}
+  .sev.high{color:var(--high);background:rgba(255,138,91,0.12);}
+  .sev.critical{color:var(--critical);background:rgba(255,93,108,0.12);}
+
+  .empty{padding:30px 18px;color:var(--muted);font-size:12.5px;text-align:center;}
+
+  .corr-list{padding:14px 18px;display:flex;flex-direction:column;gap:12px;max-height:640px;overflow-y:auto;}
+  .corr-item{
+    border:1px solid var(--line);border-left:3px solid var(--critical);border-radius:6px;
+    padding:12px 14px;background:var(--panel-2);
+  }
+  .corr-item .corr-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+  .corr-item .corr-src{font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:13px;}
+  .corr-item .corr-summary{font-size:12px;color:var(--muted);line-height:1.5;}
+  .corr-item .corr-segments{margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;}
+  .seg-tag{
+    font-family:'IBM Plex Mono',monospace;font-size:10px;padding:2px 7px;border-radius:4px;
+    background:rgba(79,209,197,0.1);color:var(--accent);border:1px solid rgba(79,209,197,0.25);
+  }
+
+  .footer-note{padding:16px 32px 40px;color:var(--muted);font-size:11.5px;font-family:'IBM Plex Mono',monospace;}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>distributed<span>_ids</span> // segment watch</h1>
+    <div class="sub"><span class="live-dot"></span>live · polling every 2s</div>
+  </div>
+  <div class="clock" id="clock">--:--:--</div>
+</header>
+
+<div class="topology" id="topology">
+  <!-- populated by JS -->
+</div>
+
+<main>
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Alert Feed</h2>
+      <span class="count-pill" id="alert-count">0 total</span>
+    </div>
+    <div id="alert-table-wrap">
+      <table>
+        <thead>
+          <tr><th>Time</th><th>Segment</th><th>Type</th><th>Severity</th><th>Source IP</th><th>Detail</th></tr>
+        </thead>
+        <tbody id="alert-body"></tbody>
+      </table>
+      <div class="empty" id="alert-empty" style="display:none;">No alerts yet — start a sensor agent to begin monitoring.</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Cross-Segment Findings</h2>
+      <span class="count-pill" id="corr-count">0 total</span>
+    </div>
+    <div class="corr-list" id="corr-list"></div>
+    <div class="empty" id="corr-empty" style="display:none;">No correlated findings yet.</div>
+  </div>
+</main>
+
+<div class="footer-note">
+  collector · /api/alerts · /api/correlations · /api/stats — cross-segment correlation flags one source seen across ≥2 segments within the configured window
+</div>
+
+<script>
+function fmtTime(ts){
+  const d = new Date(ts*1000);
+  return d.toLocaleTimeString('en-US',{hour12:false});
+}
+
+function tickClock(){
+  document.getElementById('clock').textContent = new Date().toLocaleTimeString('en-US',{hour12:false});
+}
+setInterval(tickClock, 1000);
+tickClock();
+
+let knownSegments = {};
+
+async function refreshTopology(){
+  const stats = await fetch('/api/stats').then(r=>r.json());
+  const segCounts = stats.by_segment || {};
+  const segNames = Object.keys(segCounts).length ? Object.keys(segCounts) : Object.keys(knownSegments);
+  const wrap = document.getElementById('topology');
+  wrap.innerHTML = '';
+
+  segNames.forEach((seg, i) => {
+    if(i>0){
+      const c = document.createElement('div');
+      c.className='connector';
+      wrap.appendChild(c);
+    }
+    const node = document.createElement('div');
+    node.className='node';
+    const count = segCounts[seg] || 0;
+    const hot = count > 0 && (Date.now()/1000 - (knownSegments[seg]||0)) < 6;
+    node.innerHTML = `
+      <div class="ring ${hot?'hot':''}">SEG</div>
+      <div class="label">${seg}</div>
+      <div class="count">${count} alerts</div>
+    `;
+    wrap.appendChild(node);
+  });
+
+  if(segNames.length){
+    const c = document.createElement('div');
+    c.className='connector';
+    wrap.appendChild(c);
+    const hub = document.createElement('div');
+    hub.className='hub';
+    hub.innerHTML = `
+      <div class="ring">HUB</div>
+      <div class="label">collector</div>
+      <div class="count">${stats.total_alerts||0} total</div>
+    `;
+    wrap.appendChild(hub);
+  } else {
+    wrap.innerHTML = '<div class="empty">waiting for sensor agents to report in…</div>';
+  }
+}
+
+async function refreshAlerts(){
+  const alerts = await fetch('/api/alerts?limit=100').then(r=>r.json());
+  const body = document.getElementById('alert-body');
+  const empty = document.getElementById('alert-empty');
+  document.getElementById('alert-count').textContent = `${alerts.length} shown`;
+
+  if(!alerts.length){
+    body.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+
+  body.innerHTML = alerts.map(a => {
+    knownSegments[a.segment_id] = Math.max(knownSegments[a.segment_id]||0, a.timestamp);
+    return `<tr>
+      <td>${fmtTime(a.timestamp)}</td>
+      <td>${a.segment_id}</td>
+      <td>${a.type}</td>
+      <td><span class="sev ${a.severity}">${a.severity}</span></td>
+      <td>${a.src_ip || '—'}</td>
+      <td style="color:var(--muted);max-width:320px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${a.detail || ''}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function refreshCorrelations(){
+  const corr = await fetch('/api/correlations?limit=50').then(r=>r.json());
+  const list = document.getElementById('corr-list');
+  const empty = document.getElementById('corr-empty');
+  document.getElementById('corr-count').textContent = `${corr.length} total`;
+
+  if(!corr.length){
+    list.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+
+  list.innerHTML = corr.map(c => `
+    <div class="corr-item">
+      <div class="corr-top">
+        <span class="corr-src">${c.src_ip}</span>
+        <span class="sev ${c.severity}">${c.severity}</span>
+      </div>
+      <div class="corr-summary">${c.summary}</div>
+      <div class="corr-segments">
+        ${c.segments.split(',').map(s=>`<span class="seg-tag">${s}</span>`).join('')}
+      </div>
+    </div>
+  `).join('');
+}
+
+async function refreshAll(){
+  try{
+    await Promise.all([refreshTopology(), refreshAlerts(), refreshCorrelations()]);
+  }catch(e){
+    console.error('refresh failed', e);
+  }
+}
+
+refreshAll();
+setInterval(refreshAll, 2000);
+</script>
+
+</body>
+</html>
